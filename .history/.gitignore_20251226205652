@@ -1,0 +1,12 @@
+# --- Frontend (Node) ---
+node_modules/
+.next/
+.DS_Store
+.env.local
+.env
+
+# --- Backend (Python) ---
+venv/
+__pycache__/
+*.pyc
+.env
