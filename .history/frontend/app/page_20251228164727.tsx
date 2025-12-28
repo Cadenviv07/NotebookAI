@@ -61,9 +61,7 @@ export default function Home() {
             </button>
         </div>
       {/* Component for drawing canvas */}
-      <Tldraw>
-        <AnalyzeButton/>
-      </Tldraw >
+      <Tldraw />
     </div>
   )
 }
