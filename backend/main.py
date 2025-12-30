@@ -1,15 +1,25 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Annotated 
+from typing import Annotated
+from dotenv import load_dotenv
+import google.generativeai as genai
 import shutil
 import os
-import random  
 import time
-from dotenv import load_dotenv
 
-load_dotenv()
+
+load_dotenv() 
 
 api_key = os.getenv("GEMINI_API_KEY")
+
+if not api_key:
+    print("GEMINI_API_KEY is empty or missing.")
+else:
+  
+    print(f"API Key found: {api_key[:5]}*******")
+    
+   
+    genai.configure(api_key=api_key)
 
 app = FastAPI()
 
@@ -21,51 +31,52 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
-def read_root():
-    return {"message": "Backend is running!"}
 
-def mock_ai_analyze(filename: str):
-    time.sleep(1.5) 
+last_request_time = 0
+COOLDOWN_SECONDS = 5
+
+
+def ask_gemini(image_path: str):
     
-    responses = [
-        "I see you drew a circle! That represents unity.",
-        "This looks like a math problem. The answer is 42.",
-    ]
-    return random.choice(responses)
+    model = genai.GenerativeModel('gemini-2.5-flash')
+    
+    print("Uploading file to Gemini...")
+    sample_file = genai.upload_file(path=image_path, display_name="User Drawing")
+    
+    print("Generating response...")
+   
+    response = model.generate_content([sample_file, "You are a smart teaching assistant. Analyze this image. If it's a math problem, solve it. If it's a diagram, explain it clearly."])
+    
+    return response.text
 
-last_requested_time = 0
-Cooldown_seconds = 10
 
 @app.post("/process-drawing")
 async def process_drawing(file: Annotated[UploadFile, File()]):
-    global last_requested_time
-
-    current_time = time.time()
-    time_passed = current_time - last_requested_time
-
-    if time_passed < Cooldown_seconds:
-        wait_time = int(Cooldown_seconds - time_passed)
-        raise HTTPException(
-            status_code=429, 
-            detail=f"Please wait {wait_time} more seconds."
-        )
+    global last_request_time
     
-    last_requested_time = current_time
+    # Check cooldown
+    current_time = time.time()
+    if (current_time - last_request_time) < COOLDOWN_SECONDS:
+        raise HTTPException(status_code=429, detail="Please wait a few seconds.")
+    last_request_time = current_time
 
+    # Create uploads folder if missing
     os.makedirs("uploads", exist_ok=True)
     
+    # Save the file
     file_location = f"uploads/{file.filename}"
-
     with open(file_location, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-        
-    print(f"Success! Saved image to {file_location}")
-
-    ai_text = mock_ai_analyze(file.filename)
     
-    return {
-        "status": "success", 
-        "message": "Image received", 
-        "ai_reply": ai_text 
-    }
+    # Run the AI
+    if not api_key:
+        return {"status": "error", "ai_reply": "Server configuration error: API Key missing."}
+
+    try:
+        reply = ask_gemini(file_location)
+        print(f"AI Success: {reply[:50]}...")
+        return {"status": "success", "ai_reply": reply}
+        
+    except Exception as e:
+        print(f"AI Failed: {e}")
+        return {"status": "error", "ai_reply": f"AI Error: {str(e)}"}
